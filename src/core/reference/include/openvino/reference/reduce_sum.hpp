@@ -73,21 +73,35 @@ T kahan_summation(const T in, const T prev_sum, T& compensation) {
 template <typename T>
 void reduce_sum(const T* in, T* out, const Shape& in_shape, const AxisSet& reduction_axes) {
     const auto out_shape = util::reduce(in_shape, reduction_axes);
-
     const auto out_size = shape_size(out_shape);
-    std::vector<T> cs(out_size, T{0});
+
     std::fill(out, std::next(out, out_size), T{0});
 
     const auto in_strides = row_major_strides(in_shape);
     const auto out_strides = row_major_strides(out_shape);
 
-    CoordinateTransformBasic input_transform(in_shape);
-    for (const auto& in_coord : input_transform) {
-        const auto out_coord = util::reduce(in_coord, reduction_axes);
-        const auto in_idx = coordinate_offset(in_coord, in_strides);
-        const auto out_idx = coordinate_offset(out_coord, out_strides);
+    const size_t max_vector_size = 100'000'000;
 
-        out[out_idx] = details::kahan_summation(in[in_idx], out[out_idx], cs[out_idx]);
+    if (out_size > max_vector_size) {
+        CoordinateTransformBasic input_transform(in_shape);
+        for (const auto& in_coord : input_transform) {
+            const auto out_coord = util::reduce(in_coord, reduction_axes);
+            const auto in_idx = coordinate_offset(in_coord, in_strides);
+            const auto out_idx = coordinate_offset(out_coord, out_strides);
+
+            out[out_idx] += in[in_idx];
+        }
+    } else {
+        std::vector<T> cs(out_size, T{0});
+
+        CoordinateTransformBasic input_transform(in_shape);
+        for (const auto& in_coord : input_transform) {
+            const auto out_coord = util::reduce(in_coord, reduction_axes);
+            const auto in_idx = coordinate_offset(in_coord, in_strides);
+            const auto out_idx = coordinate_offset(out_coord, out_strides);
+
+            out[out_idx] = details::kahan_summation(in[in_idx], out[out_idx], cs[out_idx]);
+        }
     }
 }
 }  // namespace reference
